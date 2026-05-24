@@ -21,6 +21,7 @@ class CommandResult:
     returncode: int
     stdout: str
     stderr: str
+    duration_sec: float = 0.0
 
     @property
     def ok(self) -> bool:
@@ -35,6 +36,8 @@ class CommandResult:
 
 def _run(args: Sequence[str], display_cmd: str, shell: str, timeout: Optional[int]) -> CommandResult:
     log.info("Running [%s] %s", shell, display_cmd)
+    import time
+    started = time.monotonic()
     try:
         proc = subprocess.run(
             args,
@@ -49,26 +52,37 @@ def _run(args: Sequence[str], display_cmd: str, shell: str, timeout: Optional[in
             returncode=proc.returncode,
             stdout=(proc.stdout or "").strip(),
             stderr=(proc.stderr or "").strip(),
+            duration_sec=time.monotonic() - started,
         )
     except subprocess.TimeoutExpired:
-        result = CommandResult(display_cmd, shell, -1, "", f"Timed out after {timeout}s")
+        result = CommandResult(
+            display_cmd, shell, -1, "",
+            f"Timed out after {timeout}s",
+            duration_sec=time.monotonic() - started,
+        )
     except FileNotFoundError as e:
-        result = CommandResult(display_cmd, shell, -1, "", f"Shell not found: {e}")
+        result = CommandResult(display_cmd, shell, -1, "", f"Shell not found: {e}",
+                               duration_sec=time.monotonic() - started)
     except Exception as e:  # noqa: BLE001
-        result = CommandResult(display_cmd, shell, -1, "", f"{type(e).__name__}: {e}")
+        result = CommandResult(display_cmd, shell, -1, "", f"{type(e).__name__}: {e}",
+                               duration_sec=time.monotonic() - started)
 
-    log.info("Result rc=%s len(out)=%s len(err)=%s",
-             result.returncode, len(result.stdout), len(result.stderr))
+    log.info("Result rc=%s len(out)=%s len(err)=%s elapsed=%.1fs",
+             result.returncode, len(result.stdout),
+             len(result.stderr), result.duration_sec)
     return result
 
 
-def run_cmd(command: str, timeout: Optional[int] = 120) -> CommandResult:
-    """Run a CMD one-liner."""
+# Generous default timeouts. SFC, DISM, big winget installs, chkdsk all
+# routinely run for several minutes; the old 120 s cut them off silently.
+def run_cmd(command: str, timeout: Optional[int] = 600) -> CommandResult:
+    """Run a CMD one-liner. 10-minute default timeout."""
     return _run(["cmd.exe", "/c", command], command, "cmd", timeout)
 
 
-def run_powershell(command: str, timeout: Optional[int] = 180) -> CommandResult:
-    """Run a PowerShell one-liner (bypasses execution policy for this call only)."""
+def run_powershell(command: str, timeout: Optional[int] = 600) -> CommandResult:
+    """Run a PowerShell one-liner (bypasses execution policy for this call only).
+    10-minute default timeout."""
     return _run(
         [
             "powershell.exe",

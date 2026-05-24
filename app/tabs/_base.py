@@ -241,8 +241,12 @@ class OutputConsole(ctk.CTkFrame):
             (cmd, "cmd"),
         ])
 
-    def result(self, ok: bool, rc: int) -> None:
-        self.log(f"exit code {rc}", level="ok" if ok else "err")
+    def result(self, ok: bool, rc: int, duration_sec: float = 0.0) -> None:
+        if duration_sec >= 0.1:
+            self.log(f"exit code {rc}  ·  {duration_sec:.1f}s",
+                     level="ok" if ok else "err")
+        else:
+            self.log(f"exit code {rc}", level="ok" if ok else "err")
 
     def output(self, text: str, max_lines: int = 30, level: str = "dim") -> None:
         """Print captured stdout/stderr from a command, lightly indented.
@@ -499,7 +503,8 @@ class ActionListTab(TabBase):
                     run_powershell(a.command) if a.shell == "powershell"
                     else run_cmd(a.command)
                 )
-                self.after(0, self.console.result, result.ok, result.returncode)
+                self.after(0, self.console.result,
+                           result.ok, result.returncode, result.duration_sec)
                 self.after(0, self.console.stdio, result.stdout, result.stderr, result.ok)
                 if result.ok:
                     ok_count += 1

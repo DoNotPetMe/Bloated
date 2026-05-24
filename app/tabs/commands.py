@@ -142,10 +142,14 @@ class CommandsTab(TabBase):
         actions = ctk.CTkFrame(right, fg_color="transparent")
         actions.grid(row=5, column=0, sticky="ew", padx=14, pady=(0, 8))
         actions.grid_columnconfigure(3, weight=1)
-        ctk.CTkButton(actions, text="▶ Run", height=34, width=110,
-                      fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
-                      text_color="#0a0a0a", font=font(12, "bold"),
-                      command=self._run_current).grid(row=0, column=0, padx=(0, 6))
+        self._run_button = ctk.CTkButton(
+            actions, text="▶ Run", height=34, width=110,
+            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
+            text_color="#0a0a0a", font=font(12, "bold"),
+            command=self._run_current,
+        )
+        self._run_button.grid(row=0, column=0, padx=(0, 6))
+        self._running = False
         ctk.CTkButton(actions, text="Save changes", height=34, width=120,
                       fg_color=COLORS["panel_alt"], hover_color=COLORS["border"],
                       command=self._save_current).grid(row=0, column=1, padx=(0, 6))
@@ -283,7 +287,19 @@ class CommandsTab(TabBase):
         self.clipboard_append(text)
         self.status("Command copied to clipboard.")
 
+    # 30-minute ceiling for one-off custom commands — covers sfc, DISM,
+    # chkdsk, big winget installs, defrag /O on a large HDD, etc.
+    _COMMAND_TIMEOUT = 1800
+
     def _run_current(self) -> None:
+        if self._running:
+            # Don't let the user fire a second command while one is in flight.
+            # That used to silently interleave outputs and made SFC look like
+            # it never finished. Wait for the green ▶ Run again.
+            self.console.log(
+                "a command is still running — wait for it to finish "
+                "(or close the app to abort).", "warn")
+            return
         text = self.cmd_box.get("1.0", "end").strip()
         if not text:
             self.console.log("no command in editor", "warn")
@@ -292,9 +308,26 @@ class CommandsTab(TabBase):
         name = self.name_var.get().strip() or "(untitled)"
         self.console.action(name)
         self.console.command(text, shell)
+        self.console.log(
+            f"running (up to {self._COMMAND_TIMEOUT // 60} min — output appears "
+            "when the command exits)", "dim")
+
+        self._running = True
+        self._run_button.configure(state="disabled", text="Running…")
+        self.status(f"Running: {name}")
 
         def worker():
-            r = run_powershell(text) if shell == "powershell" else run_cmd(text)
-            self.after(0, self.console.result, r.ok, r.returncode)
+            try:
+                r = (run_powershell(text, timeout=self._COMMAND_TIMEOUT)
+                     if shell == "powershell"
+                     else run_cmd(text, timeout=self._COMMAND_TIMEOUT))
+            finally:
+                self.after(0, self._finish_run)
+            self.after(0, self.console.result, r.ok, r.returncode, r.duration_sec)
             self.after(0, self.console.stdio, r.stdout, r.stderr, r.ok)
         threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_run(self) -> None:
+        self._running = False
+        self._run_button.configure(state="normal", text="▶ Run")
+        self.status("Ready.")
