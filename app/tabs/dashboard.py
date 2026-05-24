@@ -86,11 +86,19 @@ class DashboardTab(TabBase):
         self.console.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
 
         # ----- Admin / OS banner -----
+        self.console.separator("BOOT")
+        self.console.log("loading modules:", "head")
+        for mod in ("debloat", "privacy", "performance", "services",
+                    "tweaks", "cleanup", "network", "updates"):
+            self.console.log(f"  - {mod} ......... ok", "dim")
         if not is_admin():
-            self.console.append("⚠  Not running as Administrator — system-wide tweaks will fail.")
+            self.console.log("running unprivileged — admin tweaks will fail", "warn")
+        else:
+            self.console.log("permission level: ADMIN", "ok")
         if not is_windows():
-            self.console.append("ℹ  Not on Windows — actions are visible for preview but won’t apply.")
-        self.console.append("Welcome. Pick a category on the left to begin.")
+            self.console.log("non-Windows host — preview mode only", "warn")
+        self.console.log("status: ONLINE", "ok")
+        self.console.separator("READY")
 
         # Start the live stats poller
         if psutil is not None:
@@ -134,16 +142,17 @@ class DashboardTab(TabBase):
         from ..utils.logger import log_path
         import os, subprocess
 
-        def append(msg: str): self.after(0, self.console.append, msg)
-
         def run(label: str, cb):
-            append(f"▶ {label}")
+            self.after(0, self.console.action, label)
             def worker():
                 try:
-                    result = cb()
-                    append(f"  ✔ {result}" if result else "  ✔ done")
+                    result = cb() or ""
+                    self.after(0, self.console.result, True, 0)
+                    if result:
+                        self.after(0, self.console.output, str(result))
                 except Exception as e:
-                    append(f"  ✖ {e}")
+                    self.after(0, self.console.result, False, -1)
+                    self.after(0, self.console.log, f"{type(e).__name__}: {e}", "err")
             threading.Thread(target=worker, daemon=True).start()
 
         if key == "restore":
@@ -160,15 +169,18 @@ class DashboardTab(TabBase):
             run("Restart Explorer",
                 lambda: run_cmd("taskkill /f /im explorer.exe & start explorer.exe").text)
         elif key == "sfc":
-            append("  sfc may take several minutes — running in background.")
+            self.console.log("sfc may take several minutes — running in background", "warn")
             run("SFC /scannow", lambda: run_cmd("sfc /scannow", timeout=900).text)
         elif key == "logs":
+            self.console.action("Open log folder")
             try:
                 folder = log_path().parent
                 if is_windows():
                     os.startfile(str(folder))  # type: ignore[attr-defined]
                 else:
                     subprocess.Popen(["xdg-open", str(folder)])
-                append(f"Opened {folder}")
+                self.console.result(True, 0)
+                self.console.output(f"opened {folder}")
             except Exception as e:
-                append(f"Could not open log folder: {e}")
+                self.console.result(False, -1)
+                self.console.log(f"could not open log folder: {e}", "err")

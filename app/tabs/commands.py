@@ -286,13 +286,15 @@ class CommandsTab(TabBase):
     def _run_current(self) -> None:
         text = self.cmd_box.get("1.0", "end").strip()
         if not text:
-            self.console.append("(no command)")
+            self.console.log("no command in editor", "warn")
             return
         shell = self.shell_var.get()
-        self.console.append(f"▶ [{shell}] {text}")
+        name = self.name_var.get().strip() or "(untitled)"
+        self.console.action(name)
+        self.console.command(text, shell)
+
         def worker():
             r = run_powershell(text) if shell == "powershell" else run_cmd(text)
-            self.after(0, self.console.append, f"  rc={r.returncode}")
-            for line in (r.text or "").splitlines()[:60]:
-                self.after(0, self.console.append, f"    {line}")
+            self.after(0, self.console.result, r.ok, r.returncode)
+            self.after(0, self.console.output, r.text, 60)
         threading.Thread(target=worker, daemon=True).start()

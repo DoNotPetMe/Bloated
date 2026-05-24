@@ -84,13 +84,15 @@ class SystemInfoTab(TabBase):
 
     # ------------------------------------------------------------------
     def _run(self, header: str, cb) -> None:
-        self.console.append(f"── {header} ──")
+        self.after(0, self.console.separator, header.upper())
+
         def worker():
             r = cb()
             text = r.text if hasattr(r, "text") else str(r)
-            for line in text.splitlines()[:200]:
-                self.after(0, self.console.append, line)
-            self.after(0, self.console.append, "")
+            ok  = getattr(r, "ok", True)
+            rc  = getattr(r, "returncode", 0)
+            self.after(0, self.console.result, ok, rc)
+            self.after(0, self.console.output, text, 200)
         threading.Thread(target=worker, daemon=True).start()
 
     def _show_os(self):

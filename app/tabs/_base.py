@@ -72,42 +72,211 @@ class TabBase(ctk.CTkFrame):
 # ---------------------------------------------------------------------------
 
 
+# Terminal-style colour palette used INSIDE the OutputConsole only.
+# Black background, neon green text, cyan accents — like a classic CRT terminal.
+TERM = {
+    "bg":         "#000000",
+    "border":     "#1A8C2D",
+    "text":       "#19E03A",   # default bright matrix green
+    "dim":        "#0E7A1F",   # darker green for timestamps / output lines
+    "head":       "#21F3FF",   # cyan for section headers / shell tag
+    "action":     "#19E03A",   # green for action titles
+    "command":    "#7BFF8A",   # light green for the actual command line
+    "ok":         "#19E03A",
+    "warn":       "#FFCC00",
+    "err":        "#FF3344",
+    "sep":        "#21F3FF",
+    "user":       "#FFFFFF",
+    "scroll":     "#1A8C2D",
+    "scroll_hov": "#19E03A",
+}
+
+
+def _now_ts() -> str:
+    """[HH:MM:SS] prefix used on every line, matching the screenshot."""
+    from datetime import datetime
+    return datetime.now().strftime("[%H:%M:%S]")
+
+
 class OutputConsole(ctk.CTkFrame):
-    """Read-only console with append() and clear()."""
+    """Terminal-style read-only console.
+
+    Renders every entry with a coloured `[HH:MM:SS]` prefix and a severity
+    tag (OK / WARN / ERR / etc.), on a pure-black background with neon-green
+    text — the ‘hacker terminal’ look.
+
+    Public API:
+        log(message, level="info")    — generic line with timestamp
+        separator(label=None)         — ASCII separator
+        action(title)                 — start an action block
+        command(cmd, shell)           — show the actual command being run
+        result(ok, rc)                — show the exit status
+        output(lines)                 — show captured stdout
+        append(message)               — back-compat shim → log(message)
+        clear()
+    """
     def __init__(self, master, height: int = 200):
-        super().__init__(master, fg_color=COLORS["panel"], corner_radius=10)
+        super().__init__(
+            master,
+            fg_color=TERM["bg"],
+            border_color=TERM["border"], border_width=1,
+            corner_radius=4,
+        )
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        bar = ctk.CTkFrame(self, fg_color="transparent")
-        bar.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
-        ctk.CTkLabel(bar, text="Output", font=font(12, "bold"),
-                     text_color=COLORS["text_dim"]).pack(side="left")
+        # ── Title bar: ─ SYSTEM LOG ────────────────────────  [ Clear ] ──
+        bar = ctk.CTkFrame(self, fg_color=TERM["bg"], corner_radius=0,
+                           height=26)
+        bar.grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 0))
+        bar.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            bar, text="── SYSTEM LOG ──",
+            font=("Consolas", 11, "bold"),
+            text_color=TERM["head"], anchor="w",
+        ).grid(row=0, column=0, sticky="w")
         ctk.CTkButton(
-            bar, text="Clear", width=70, height=24,
-            fg_color="transparent", hover_color=COLORS["panel_alt"],
-            text_color=COLORS["text_dim"], font=font(11),
+            bar, text="[ CLEAR ]", width=80, height=22,
+            fg_color=TERM["bg"], hover_color="#082008",
+            text_color=TERM["head"], font=("Consolas", 10, "bold"),
+            border_color=TERM["head"], border_width=1, corner_radius=2,
             command=self.clear,
-        ).pack(side="right")
+        ).grid(row=0, column=1, sticky="e")
 
+        # ── Body text widget ──
         self.text = ctk.CTkTextbox(
             self, height=height,
-            fg_color=COLORS["bg"], text_color=COLORS["text"],
-            font=("Consolas", 11), corner_radius=8, wrap="word",
+            fg_color=TERM["bg"], text_color=TERM["text"],
+            font=("Cascadia Mono", 11), corner_radius=2, wrap="word",
+            border_width=0,
+            scrollbar_button_color=TERM["scroll"],
+            scrollbar_button_hover_color=TERM["scroll_hov"],
         )
-        self.text.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
-        self.text.configure(state="disabled")
+        self.text.grid(row=1, column=0, sticky="nsew", padx=8, pady=(4, 8))
 
-    def append(self, line: str) -> None:
+        # Tag styles (configured on the underlying tk.Text widget). CTk stores
+        # it as `_textbox`; fall back to scanning children if that ever changes.
+        raw = getattr(self.text, "_textbox", None)
+        if raw is None:
+            for child in self.text.winfo_children():
+                if isinstance(child, tk.Text):
+                    raw = child
+                    break
+        if raw is None:           # last-ditch: act as if CTkTextbox is the Text
+            raw = self.text
+        raw.tag_configure("ts",      foreground=TERM["dim"])
+        raw.tag_configure("info",    foreground=TERM["text"])
+        raw.tag_configure("dim",     foreground=TERM["dim"])
+        raw.tag_configure("ok",      foreground=TERM["ok"])
+        raw.tag_configure("warn",    foreground=TERM["warn"])
+        raw.tag_configure("err",     foreground=TERM["err"])
+        raw.tag_configure("head",    foreground=TERM["head"])
+        raw.tag_configure("sep",     foreground=TERM["sep"])
+        raw.tag_configure("cmd",     foreground=TERM["command"])
+        raw.tag_configure("action",  foreground=TERM["action"])
+        raw.tag_configure("shell",   foreground=TERM["head"])
+
+        self.text.configure(state="disabled")
+        self._raw = raw
+
+        # Boot line so the panel never looks empty.
+        self.separator("BLOATED // CONSOLE")
+        self.log("ready — awaiting command", level="dim")
+
+    # ------------------------------------------------------------------
+    # Low-level writer
+
+    def _write(self, segments: list[tuple[str, str]]) -> None:
+        """Insert a sequence of (text, tag) pairs followed by a newline."""
         self.text.configure(state="normal")
-        self.text.insert("end", line + "\n")
+        for text, tag in segments:
+            self._raw.insert("end", text, tag)
+        self._raw.insert("end", "\n")
         self.text.see("end")
         self.text.configure(state="disabled")
+
+    # ------------------------------------------------------------------
+    # Public API
+
+    _LEVEL_TAGS = {
+        "info":  ("info",  ""),
+        "dim":   ("dim",   ""),
+        "ok":    ("ok",    "[ OK ]   "),
+        "warn":  ("warn",  "[WARN]   "),
+        "err":   ("err",   "[ERR ]   "),
+        "head":  ("head",  ""),
+        "cmd":   ("cmd",   ""),
+    }
+
+    def log(self, message: str, level: str = "info") -> None:
+        tag, prefix = self._LEVEL_TAGS.get(level, ("info", ""))
+        segments: list[tuple[str, str]] = [(f"{_now_ts()} ", "ts")]
+        if prefix:
+            segments.append((prefix, tag))
+        segments.append((str(message), tag))
+        self._write(segments)
+
+    def separator(self, label: str | None = None) -> None:
+        if label:
+            line = f"═══ {label} " + "═" * max(4, 56 - len(label))
+        else:
+            line = "═" * 60
+        self._write([(line, "sep")])
+
+    def action(self, title: str) -> None:
+        """Open a new action block — bright-green title with >>> marker."""
+        self._write([
+            (f"{_now_ts()} ", "ts"),
+            (">>> ", "head"),
+            (title, "action"),
+        ])
+
+    def command(self, cmd: str, shell: str = "cmd") -> None:
+        """Show the actual command about to run, like a shell echo."""
+        shell_tag = f"{shell.lower()}>"
+        self._write([
+            (f"{_now_ts()} ", "ts"),
+            ("    $ ", "dim"),
+            (f"{shell_tag} ", "shell"),
+            (cmd, "cmd"),
+        ])
+
+    def result(self, ok: bool, rc: int) -> None:
+        self.log(f"exit code {rc}", level="ok" if ok else "err")
+
+    def output(self, text: str, max_lines: int = 30) -> None:
+        """Print captured stdout/stderr from a command, lightly indented."""
+        if not text or text.strip() == "(no output)":
+            return
+        lines = text.splitlines()
+        for line in lines[:max_lines]:
+            self._write([
+                (f"{_now_ts()} ", "ts"),
+                ("    │ ", "dim"),
+                (line, "dim"),
+            ])
+        if len(lines) > max_lines:
+            self._write([
+                (f"{_now_ts()} ", "ts"),
+                ("    │ ", "dim"),
+                (f"... ({len(lines) - max_lines} more lines truncated)", "warn"),
+            ])
+
+    def banner(self, text: str) -> None:
+        """Big eye-catching header, like SYSTEM LOG in the screenshot."""
+        self._write([(f"┌─ {text} " + "─" * max(4, 56 - len(text)) + "─┐", "head")])
+
+    # ----- Back-compat -----
+    def append(self, line: str) -> None:
+        """Old API: plain timestamped line. Kept so existing callers work."""
+        self.log(line, level="info")
 
     def clear(self) -> None:
         self.text.configure(state="normal")
         self.text.delete("1.0", "end")
         self.text.configure(state="disabled")
+        self.separator("CLEARED")
+        self.log("console cleared", level="dim")
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +447,7 @@ class ActionListTab(TabBase):
     def _run_selected(self) -> None:
         chosen = [r.action for r in self._rows if r.var.get()]
         if not chosen:
-            self.console.append("Nothing selected.")
+            self.after(0, self.console.log, "nothing selected.", "warn")
             return
 
         if any(a.danger for a in chosen):
@@ -288,31 +457,35 @@ class ActionListTab(TabBase):
                 f"{sum(1 for a in chosen if a.danger)} of {len(chosen)} actions are "
                 "marked destructive (uninstall, remove, etc.). Continue?",
             ):
+                self.after(0, self.console.log,
+                           "user aborted at confirmation prompt.", "warn")
                 return
 
         self.run_button.configure(state="disabled", text="Running…")
         self.status(f"Running {len(chosen)} action(s)…")
 
         def worker():
+            self.after(0, self.console.separator,
+                       f"RUN BATCH · {len(chosen)} ACTION(S)")
+            ok_count = err_count = 0
             for a in chosen:
-                self._append_safe(f"▶ {a.title}")
-                self._append_safe(f"  $ {a.shell}> {a.command}")
+                self.after(0, self.console.action, a.title)
+                self.after(0, self.console.command, a.command, a.shell)
                 result: CommandResult = (
                     run_powershell(a.command) if a.shell == "powershell"
                     else run_cmd(a.command)
                 )
-                marker = "✔" if result.ok else "✖"
-                self._append_safe(f"  {marker} rc={result.returncode}")
-                if result.text and result.text != "(no output)":
-                    for line in result.text.splitlines()[:30]:
-                        self._append_safe(f"    {line}")
-                self._append_safe("")
+                self.after(0, self.console.result, result.ok, result.returncode)
+                self.after(0, self.console.output, result.text)
+                if result.ok:
+                    ok_count += 1
+                else:
+                    err_count += 1
+            self.after(0, self.console.separator,
+                       f"DONE · {ok_count} OK / {err_count} FAIL")
             self.after(0, self._finish_run, len(chosen))
 
         threading.Thread(target=worker, daemon=True).start()
-
-    def _append_safe(self, line: str) -> None:
-        self.after(0, self.console.append, line)
 
     def _finish_run(self, count: int) -> None:
         self.run_button.configure(state="normal", text="Run selected")
