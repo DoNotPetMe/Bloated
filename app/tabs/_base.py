@@ -308,11 +308,13 @@ class ActionListTab(TabBase):
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         left.grid_columnconfigure(0, weight=1)
         left.grid_rowconfigure(1, weight=1)
+        self.left_panel = left
 
         # Toolbar
         tools = ctk.CTkFrame(left, fg_color="transparent")
         tools.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
         tools.grid_columnconfigure(3, weight=1)
+        self.tools_frame = tools
         ctk.CTkButton(tools, text="Select all", width=90, height=28,
                       fg_color=COLORS["panel_alt"], hover_color=COLORS["border"],
                       command=self._select_all,
@@ -370,6 +372,14 @@ class ActionListTab(TabBase):
             self._rows.append(row)
         self._render_rows()
         self._update_count()
+
+        # Hook for subclasses to inject extra widgets (preset bar, profile
+        # card, etc.) into the just-built layout.
+        self._extend_layout()
+
+    def _extend_layout(self) -> None:
+        """Subclass hook called at the end of :meth:`build`. Default no-op."""
+        return None
 
     # ---------- rendering ----------
 

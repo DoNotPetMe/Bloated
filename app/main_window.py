@@ -10,6 +10,7 @@ from .tabs.dashboard import DashboardTab
 from .tabs.debloat import DebloatTab
 from .tabs.privacy import PrivacyTab
 from .tabs.performance import PerformanceTab
+from .tabs.game_tune import GameTuneTab
 from .tabs.services import ServicesTab
 from .tabs.tweaks import TweaksTab
 from .tabs.cleanup import CleanupTab
@@ -17,6 +18,7 @@ from .tabs.network import NetworkTab
 from .tabs.updates import UpdatesTab
 from .tabs.apps import AppsTab
 from .tabs.commands import CommandsTab
+from .tabs.headroom import HeadroomTab
 from .tabs.system_info import SystemInfoTab
 
 
@@ -26,6 +28,7 @@ TABS = [
     ("Debloater",   "✂",  DebloatTab),
     ("Privacy",     "\U0001F512", PrivacyTab),
     ("Performance", "⚡",  PerformanceTab),
+    ("Game Tune",   "\U0001F3AE", GameTuneTab),
     ("Services",    "⚙",  ServicesTab),
     ("Tweaks",      "\U0001F527", TweaksTab),
     ("Cleanup",     "\U0001F9F9", CleanupTab),
@@ -33,6 +36,7 @@ TABS = [
     ("Updates",     "↻",  UpdatesTab),
     ("Apps",        "\U0001F4E6", AppsTab),
     ("Commands",    "▶",  CommandsTab),
+    ("Headroom",    "\U0001F4CA", HeadroomTab),
     ("System Info", "\U0001F4BB", SystemInfoTab),
 ]
 

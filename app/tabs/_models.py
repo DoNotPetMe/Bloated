@@ -5,7 +5,7 @@ tkinter just to enumerate their action lists.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -18,3 +18,6 @@ class Action:
     category: str = "General"
     danger: bool = False
     enabled_by_default: bool = False
+    # Game Tune tab: which presets recommend this action. Empty = not part of
+    # any preset. Recognised names live in app.data.game_tweaks_data.PRESETS.
+    presets: tuple[str, ...] = field(default_factory=tuple)
