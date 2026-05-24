@@ -88,11 +88,16 @@ class SystemInfoTab(TabBase):
 
         def worker():
             r = cb()
-            text = r.text if hasattr(r, "text") else str(r)
-            ok  = getattr(r, "ok", True)
-            rc  = getattr(r, "returncode", 0)
+            ok = getattr(r, "ok", True)
+            rc = getattr(r, "returncode", 0)
             self.after(0, self.console.result, ok, rc)
-            self.after(0, self.console.output, text, 200)
+            stdout = getattr(r, "stdout", "") or ""
+            stderr = getattr(r, "stderr", "") or ""
+            if stdout or stderr:
+                self.after(0, self.console.stdio, stdout, stderr, ok)
+            else:
+                text = getattr(r, "text", str(r))
+                self.after(0, self.console.output, text, 200)
         threading.Thread(target=worker, daemon=True).start()
 
     def _show_os(self):
@@ -126,8 +131,12 @@ class SystemInfoTab(TabBase):
         self._run("Installed apps (winget)", lambda: run_cmd("winget list", timeout=120))
 
     def _show_updates(self):
+        # wmic was removed in Windows 11 24H2+, use Get-HotFix.
         self._run("Installed updates",
-                  lambda: run_cmd("wmic qfe list brief /format:table", timeout=60))
+                  lambda: run_powershell(
+                      "Get-HotFix | Sort-Object InstalledOn -Descending "
+                      "| Format-Table HotFixID, Description, InstalledOn -AutoSize",
+                      timeout=60))
 
     def _show_drivers(self):
         self._run("3rd-party drivers",

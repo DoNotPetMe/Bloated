@@ -207,9 +207,14 @@ def _detect_cpu(p: HardwareProfile) -> None:
 
 
 def _detect_gpu(p: HardwareProfile) -> None:
+    # Pre-format the DriverDate inside PowerShell — `ConvertTo-Json` in PS 5.1
+    # serialises [DateTime] as `/Date(<ms>)/`, which our previous regex
+    # mis-parsed into nonsense like 1777-93-92. Forcing a string up front
+    # works on every PS version.
     data = _ps_json(
-        "Get-CimInstance Win32_VideoController | Select-Object "
-        "Name,AdapterRAM,DriverDate,DriverVersion"
+        "Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,"
+        "@{N='DriverDate';E={ if ($_.DriverDate) "
+        "{ $_.DriverDate.ToString('yyyy-MM-dd') } else { '' } }},DriverVersion"
     )
     if isinstance(data, dict):
         data = [data]
@@ -243,10 +248,23 @@ def _detect_gpu(p: HardwareProfile) -> None:
     except Exception:
         pass
 
-    raw_date = str(best.get("DriverDate") or "")
-    m = re.search(r"(\d{4})(\d{2})(\d{2})", raw_date)
-    if m:
-        p.gpu_driver_date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    raw_date = str(best.get("DriverDate") or "").strip()
+    # We asked PS to format as yyyy-MM-dd; accept that or fall back to digit
+    # extraction (handles the `/Date(ms)/` and DMTF `YYYYMMDDhhmmss.ffffff+ttt`
+    # legacy formats if anything slips through).
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_date):
+        p.gpu_driver_date = raw_date
+    elif raw_date.startswith("/Date("):
+        try:
+            from datetime import datetime
+            ms = int(re.search(r"(\d+)", raw_date).group(1))
+            p.gpu_driver_date = datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    else:
+        m = re.match(r"^(\d{4})(\d{2})(\d{2})", raw_date)
+        if m:
+            p.gpu_driver_date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
 
 
 def _detect_ram(p: HardwareProfile) -> None:
@@ -385,14 +403,27 @@ def _detect_network(p: HardwareProfile) -> None:
 
 def _detect_firmware_and_os(p: HardwareProfile) -> None:
     bios = _ps_json(
-        "Get-CimInstance Win32_BIOS | Select-Object ReleaseDate,Manufacturer,Name,Version"
+        "Get-CimInstance Win32_BIOS | Select-Object "
+        "@{N='ReleaseDate';E={ if ($_.ReleaseDate) "
+        "{ $_.ReleaseDate.ToString('yyyy-MM-dd') } else { '' } }},"
+        "Manufacturer,Name,Version"
     )
     if isinstance(bios, list): bios = bios[0] if bios else None
     if isinstance(bios, dict):
-        raw = str(bios.get("ReleaseDate") or "")
-        m = re.search(r"(\d{4})(\d{2})(\d{2})", raw)
-        if m:
-            p.bios_date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+        raw = str(bios.get("ReleaseDate") or "").strip()
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+            p.bios_date = raw
+        elif raw.startswith("/Date("):
+            try:
+                from datetime import datetime
+                ms = int(re.search(r"(\d+)", raw).group(1))
+                p.bios_date = datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        else:
+            m = re.match(r"^(\d{4})(\d{2})(\d{2})", raw)
+            if m:
+                p.bios_date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
 
     osd = _ps_json(
         "Get-CimInstance Win32_OperatingSystem | Select-Object Caption,BuildNumber,Version"

@@ -106,8 +106,11 @@ BUILTIN: list[SavedCommand] = [
     SavedCommand(
         "List installed Windows updates (KB numbers)",
         "Shows every Windows hotfix / cumulative update applied. Useful "
-        "for ‘am I patched against CVE-XYZ?’ checks.",
-        "wmic qfe list brief /format:table", "cmd", ("diagnostics", "updates"),
+        "for ‘am I patched against CVE-XYZ?’ checks. Uses Get-HotFix because "
+        "wmic was removed in Windows 11 24H2+.",
+        "Get-HotFix | Sort-Object InstalledOn -Descending "
+        "| Format-Table HotFixID, Description, InstalledOn -AutoSize",
+        "powershell", ("diagnostics", "updates"),
     ),
     SavedCommand(
         "Generate Reliability Monitor report",
@@ -196,9 +199,10 @@ BUILTIN: list[SavedCommand] = [
         "Show Windows product key (OEM, baked into firmware)",
         "Reads the OEM activation key Microsoft baked into your "
         "motherboard’s BIOS at the factory. Handy before a wipe — "
-        "Windows can re-activate from this even without a key prompt.",
-        "wmic path softwarelicensingservice get OA3xOriginalProductKey",
-        "cmd", ("license", "info"),
+        "Windows can re-activate from this even without a key prompt. "
+        "Uses CIM because wmic was removed in Win 11 24H2+.",
+        "(Get-CimInstance -ClassName SoftwareLicensingService).OA3xOriginalProductKey",
+        "powershell", ("license", "info"),
     ),
     SavedCommand(
         "Show Windows activation status (slmgr)",

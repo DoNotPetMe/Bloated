@@ -317,9 +317,10 @@ def _amd_gpu() -> list[Action]:
             description=(
                 "AMD Adrenalin runs a small web stack for the overlay/widget "
                 "system. This stops the background AMD External Events Utility "
-                "process from launching at logon."),
+                "process from launching at logon. Re-enable with: "
+                "`sc config \"AMD External Events Utility\" start=auto`."),
             command=(
-                'sc config AMD External Events Utility start=manual 2>nul & '
+                'sc config "AMD External Events Utility" start=manual 2>nul & '
                 'sc stop "AMD External Events Utility" 2>nul'
             ),
             shell="cmd",
@@ -418,12 +419,25 @@ def _low_ram() -> list[Action]:
                 "Replaces Windows’ ‘System managed’ pagefile with a fixed size "
                 "= 1.5× your installed RAM. Smoother under heavy load on "
                 "<16 GB machines because the OS doesn’t need to keep growing "
-                "the file."),
+                "the file. Reboot required."),
+            # Uses CIM only — wmic.exe was removed in Windows 11 24H2.
             command=(
-                "$mb = [int]((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1MB * 1.5); "
-                "wmic computersystem set AutomaticManagedPagefile=False; "
-                "wmic pagefileset where name='C:\\\\pagefile.sys' set InitialSize=$mb,MaximumSize=$mb; "
-                "Write-Host \"Pagefile fixed at $mb MB\""
+                "$mb = [int]((Get-CimInstance Win32_ComputerSystem)."
+                "TotalPhysicalMemory / 1MB * 1.5); "
+                "$cs = Get-CimInstance Win32_ComputerSystem; "
+                "Set-CimInstance -InputObject $cs -Property "
+                "@{ AutomaticManagedPagefile = $false }; "
+                "$pf = Get-CimInstance Win32_PageFileSetting "
+                "    | Where-Object Name -eq 'C:\\pagefile.sys'; "
+                "if (-not $pf) { "
+                "  $pf = New-CimInstance -ClassName Win32_PageFileSetting "
+                "    -Property @{ Name = 'C:\\pagefile.sys'; "
+                "                  InitialSize = $mb; MaximumSize = $mb } "
+                "} else { "
+                "  Set-CimInstance -InputObject $pf -Property "
+                "    @{ InitialSize = $mb; MaximumSize = $mb } "
+                "}; "
+                "Write-Host \"Pagefile fixed at $mb MB (reboot to apply)\""
             ),
             shell="powershell",
             category="Low RAM (<16 GB)",
@@ -435,8 +449,8 @@ def _low_ram() -> list[Action]:
                 "Default in Win10+ but sometimes disabled. Compresses cold "
                 "pages in RAM instead of paging them to disk — way faster on "
                 "low-RAM systems."),
-            command="powershell -NoProfile -Command \"Enable-MMAgent -mc\"",
-            shell="cmd",
+            command="Enable-MMAgent -MemoryCompression",
+            shell="powershell",
             category="Low RAM (<16 GB)",
             presets=(ESPORTS, AAA, LAPTOP),
         ),
@@ -451,11 +465,15 @@ def _high_ram() -> list[Action]:
                 "Removes the C:\\pagefile.sys entirely. Frees disk space and "
                 "avoids the OS paging out anything. Some apps (older Adobe, "
                 "some games) crash without a pagefile — re-enable if you "
-                "see weirdness."),
+                "see weirdness. Reboot required."),
+            # CIM-only — wmic removed in Win11 24H2.
             command=(
-                "wmic computersystem set AutomaticManagedPagefile=False; "
-                "wmic pagefileset delete; "
-                "Write-Host 'Pagefile removed (reboot required)'"
+                "$cs = Get-CimInstance Win32_ComputerSystem; "
+                "Set-CimInstance -InputObject $cs -Property "
+                "@{ AutomaticManagedPagefile = $false }; "
+                "Get-CimInstance Win32_PageFileSetting "
+                "    | Remove-CimInstance; "
+                "Write-Host 'Pagefile removed (reboot to apply)'"
             ),
             shell="powershell",
             category="High RAM (32+ GB)",

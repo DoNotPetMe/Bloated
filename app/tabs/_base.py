@@ -244,8 +244,14 @@ class OutputConsole(ctk.CTkFrame):
     def result(self, ok: bool, rc: int) -> None:
         self.log(f"exit code {rc}", level="ok" if ok else "err")
 
-    def output(self, text: str, max_lines: int = 30) -> None:
-        """Print captured stdout/stderr from a command, lightly indented."""
+    def output(self, text: str, max_lines: int = 30, level: str = "dim") -> None:
+        """Print captured stdout/stderr from a command, lightly indented.
+
+        `level` controls the colour of the output lines:
+          - "dim"  for normal stdout (the default)
+          - "warn" for stderr when rc=0 (informational warnings)
+          - "err"  for stderr when rc!=0 (real failures)
+        """
         if not text or text.strip() == "(no output)":
             return
         lines = text.splitlines()
@@ -253,7 +259,7 @@ class OutputConsole(ctk.CTkFrame):
             self._write([
                 (f"{_now_ts()} ", "ts"),
                 ("    │ ", "dim"),
-                (line, "dim"),
+                (line, level),
             ])
         if len(lines) > max_lines:
             self._write([
@@ -261,6 +267,14 @@ class OutputConsole(ctk.CTkFrame):
                 ("    │ ", "dim"),
                 (f"... ({len(lines) - max_lines} more lines truncated)", "warn"),
             ])
+
+    def stdio(self, stdout: str, stderr: str, ok: bool) -> None:
+        """Convenience: print stdout dim, then stderr in the right colour for
+        whether the overall command succeeded."""
+        if stdout:
+            self.output(stdout, level="dim")
+        if stderr:
+            self.output(stderr, level="warn" if ok else "err")
 
     def banner(self, text: str) -> None:
         """Big eye-catching header, like SYSTEM LOG in the screenshot."""
@@ -486,7 +500,7 @@ class ActionListTab(TabBase):
                     else run_cmd(a.command)
                 )
                 self.after(0, self.console.result, result.ok, result.returncode)
-                self.after(0, self.console.output, result.text)
+                self.after(0, self.console.stdio, result.stdout, result.stderr, result.ok)
                 if result.ok:
                     ok_count += 1
                 else:

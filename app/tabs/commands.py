@@ -296,5 +296,5 @@ class CommandsTab(TabBase):
         def worker():
             r = run_powershell(text) if shell == "powershell" else run_cmd(text)
             self.after(0, self.console.result, r.ok, r.returncode)
-            self.after(0, self.console.output, r.text, 60)
+            self.after(0, self.console.stdio, r.stdout, r.stderr, r.ok)
         threading.Thread(target=worker, daemon=True).start()

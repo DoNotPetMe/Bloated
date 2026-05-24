@@ -169,12 +169,16 @@ ACTIONS: list[Action] = [
             "Removes every WindowsUpdate / DeliveryOptimization / metered "
             "registry value this tab created. After running, Windows "
             "Update behaviour returns to factory defaults."),
+        # Each delete suppresses its own error if the key/value wasn't there
+        # — otherwise this action gets flagged as failed when it actually did
+        # the right thing on a clean system.
         command=(
-            'reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate" /f & '
-            'reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" /f & '
-            'reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization" /f & '
-            'reg delete "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\NetworkList\\DefaultMediaCost" /f & '
-            'reg delete "HKCU\\Software\\Microsoft\\WindowsUpdate\\UX\\Settings" /v PauseUpdatesExpiryTime /f'
+            'reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate" /f 2>nul & '
+            'reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" /f 2>nul & '
+            'reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization" /f 2>nul & '
+            'reg delete "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\NetworkList\\DefaultMediaCost" /f 2>nul & '
+            'reg delete "HKCU\\Software\\Microsoft\\WindowsUpdate\\UX\\Settings" /v PauseUpdatesExpiryTime /f 2>nul & '
+            'echo Reverted Windows Update policies.'
         ),
         shell="cmd",
         category="Revert",

@@ -171,34 +171,73 @@ class GameTuneTab(ActionListTab):
             ).grid(row=row, column=col + 1, sticky="w", padx=(0, 30), pady=2)
 
     def _build_bios_card(self) -> None:
-        """Read-only ‘BIOS-level things Bloated cannot touch’ panel."""
+        """Read-only ‘BIOS-level things Bloated cannot touch’ panel.
+
+        Collapsible — defaults to collapsed so the Run button on the action
+        list above is always visible. Click the header to expand.
+        """
         card = ctk.CTkFrame(self.body, fg_color=COLORS["panel"],
                             corner_radius=10)
-        # Append at the bottom — bump rowconfigure
+        # Append at the bottom with zero weight so it never steals vertical
+        # space from the action list / console row above.
         self.body.grid_rowconfigure(2, weight=0)
         card.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         card.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(
-            card, text="DO IN BIOS (Bloated can’t touch these from Windows)",
+        self._bios_expanded = False
+        self._bios_card = card
+
+        # Clickable header (acts as the expand/collapse toggle).
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=14, pady=(10, 4))
+        header.grid_columnconfigure(1, weight=1)
+
+        self._bios_arrow = ctk.CTkLabel(
+            header, text="▸", font=("Cascadia Mono", 12, "bold"),
+            text_color=COLORS["warn"], width=14,
+        )
+        self._bios_arrow.grid(row=0, column=0, sticky="w")
+        title = ctk.CTkLabel(
+            header,
+            text=f"DO IN BIOS  ({len(BIOS_CHECKLIST)} items Bloated can’t touch)",
             font=("Cascadia Mono", 11, "bold"),
             text_color=COLORS["warn"], anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=14, pady=(10, 4))
+        )
+        title.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        for w in (header, self._bios_arrow, title):
+            w.bind("<Button-1>", lambda _e: self._toggle_bios())
 
-        for i, (name, desc) in enumerate(BIOS_CHECKLIST, start=1):
-            row = ctk.CTkFrame(card, fg_color=COLORS["panel_alt"],
-                               corner_radius=6)
-            row.grid(row=i, column=0, sticky="ew", padx=8, pady=2)
-            row.grid_columnconfigure(1, weight=1)
-            ctk.CTkLabel(
-                row, text=f"✔ {name}", anchor="w",
-                font=font(11, "bold"), text_color=COLORS["text"],
-                width=240,
-            ).grid(row=0, column=0, sticky="w", padx=10, pady=(6, 0))
-            ctk.CTkLabel(
-                row, text=desc, anchor="w",
-                font=font(11), text_color=COLORS["text_dim"],
-                wraplength=720, justify="left",
+        # Container for the per-item rows (created on first expand).
+        self._bios_items = ctk.CTkFrame(card, fg_color="transparent")
+
+    def _toggle_bios(self) -> None:
+        self._bios_expanded = not self._bios_expanded
+        self._bios_arrow.configure(text="▾" if self._bios_expanded else "▸")
+        if self._bios_expanded:
+            # Build rows lazily on first expand.
+            if not self._bios_items.winfo_children():
+                self._bios_items.grid_columnconfigure(0, weight=1)
+                for i, (name, desc) in enumerate(BIOS_CHECKLIST):
+                    self._make_bios_row(self._bios_items, i, name, desc)
+            self._bios_items.grid(row=1, column=0, sticky="ew",
+                                  padx=8, pady=(0, 10))
+        else:
+            self._bios_items.grid_forget()
+
+    def _make_bios_row(self, parent, i: int, name: str, desc: str) -> None:
+        row = ctk.CTkFrame(parent, fg_color=COLORS["panel_alt"],
+                           corner_radius=6)
+        row.grid(row=i, column=0, sticky="ew", padx=0, pady=2)
+        row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            row, text=f"✔ {name}", anchor="w",
+            font=font(11, "bold"), text_color=COLORS["text"],
+            width=240,
+        ).grid(row=0, column=0, sticky="w", padx=10, pady=(6, 0))
+        ctk.CTkLabel(
+            row, text=desc, anchor="w",
+            font=font(11), text_color=COLORS["text_dim"],
+            wraplength=720, justify="left",
             ).grid(row=0, column=1, sticky="ew", padx=(6, 10), pady=(6, 6))
 
     # ---------- preset handling ----------
