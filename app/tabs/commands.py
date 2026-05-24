@@ -14,7 +14,7 @@ import customtkinter as ctk
 from ._base import TabBase, OutputConsole
 from ..data.commands_data import BUILTIN, SavedCommand
 from ..theme import COLORS, font
-from ..utils.runner import run_cmd, run_powershell
+from ..utils.runner import run_cmd_stream, run_powershell_stream
 
 
 _STORE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Bloated" / "custom_commands.json"
@@ -309,22 +309,36 @@ class CommandsTab(TabBase):
         self.console.action(name)
         self.console.command(text, shell)
         self.console.log(
-            f"running (up to {self._COMMAND_TIMEOUT // 60} min — output appears "
-            "when the command exits)", "dim")
+            f"streaming output live  ·  timeout {self._COMMAND_TIMEOUT // 60} min",
+            "dim")
 
         self._running = True
         self._run_button.configure(state="disabled", text="Running…")
         self.status(f"Running: {name}")
 
+        # Marshal callbacks back to the Tk main loop so updating the console
+        # from background threads is safe.
+        def on_line(stream: str, line: str) -> None:
+            self.after(0, self.console.stream_line, stream, line)
+
+        def on_tick(elapsed: float) -> None:
+            self.after(0, self.console.heartbeat, elapsed)
+
+        runner = (run_powershell_stream
+                  if shell == "powershell" else run_cmd_stream)
+
         def worker():
             try:
-                r = (run_powershell(text, timeout=self._COMMAND_TIMEOUT)
-                     if shell == "powershell"
-                     else run_cmd(text, timeout=self._COMMAND_TIMEOUT))
+                r = runner(text, on_line=on_line, on_tick=on_tick,
+                           timeout=self._COMMAND_TIMEOUT)
             finally:
                 self.after(0, self._finish_run)
-            self.after(0, self.console.result, r.ok, r.returncode, r.duration_sec)
-            self.after(0, self.console.stdio, r.stdout, r.stderr, r.ok)
+            # Streaming already printed every stdout / stderr line in real
+            # time, so we just need the final verdict and to wipe any
+            # lingering heartbeat line.
+            self.after(0, self.console._drop_live_line_if_any)
+            self.after(0, self.console.result,
+                       r.ok, r.returncode, r.duration_sec)
         threading.Thread(target=worker, daemon=True).start()
 
     def _finish_run(self) -> None:

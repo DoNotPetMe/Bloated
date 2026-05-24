@@ -175,6 +175,9 @@ class OutputConsole(ctk.CTkFrame):
         raw.tag_configure("cmd",     foreground=TERM["command"])
         raw.tag_configure("action",  foreground=TERM["action"])
         raw.tag_configure("shell",   foreground=TERM["head"])
+        # Marker tag used to identify in-place "still running…" heartbeat
+        # lines so subsequent updates can overwrite them.
+        raw.tag_configure("live",    foreground=TERM["head"])
 
         self.text.configure(state="disabled")
         self._raw = raw
@@ -279,6 +282,61 @@ class OutputConsole(ctk.CTkFrame):
             self.output(stdout, level="dim")
         if stderr:
             self.output(stderr, level="warn" if ok else "err")
+
+    # ------------------------------------------------------------------
+    # Streaming helpers
+    # ------------------------------------------------------------------
+
+    def stream_line(self, stream: str, line: str) -> None:
+        """Print a single output line that arrived live from a streaming
+        command. `stream` is 'out' or 'err'."""
+        # If a heartbeat is currently the last line, drop it so real output
+        # replaces the spinner rather than piling above it.
+        self._drop_live_line_if_any()
+        level = "warn" if stream == "err" else "dim"
+        marker = "│" if stream == "out" else "║"
+        self.text.configure(state="normal")
+        self._raw.insert("end", f"{_now_ts()} ", "ts")
+        self._raw.insert("end", f"    {marker} ", "dim")
+        self._raw.insert("end", line + "\n", level)
+        self.text.see("end")
+        self.text.configure(state="disabled")
+
+    def heartbeat(self, elapsed_sec: float, message: str = "still running…") -> None:
+        """Update an in-place 'still running' status line so the user can
+        see the command is alive without filling the console with ticks."""
+        m, s = divmod(int(elapsed_sec), 60)
+        if m >= 60:
+            h, m = divmod(m, 60)
+            elapsed = f"{h}h {m:02d}m {s:02d}s"
+        elif m:
+            elapsed = f"{m}m {s:02d}s"
+        else:
+            elapsed = f"{s}s"
+        spinner = "◐◓◑◒"[int(elapsed_sec) % 4]
+        self._drop_live_line_if_any()
+        self.text.configure(state="normal")
+        self._raw.insert("end", f"{_now_ts()} ", "ts")
+        self._raw.insert("end", f"  {spinner} {message}  ·  elapsed {elapsed}\n",
+                         ("head", "live"))
+        self.text.see("end")
+        self.text.configure(state="disabled")
+
+    def _drop_live_line_if_any(self) -> None:
+        """If the previous insert was a heartbeat (carries the 'live' tag),
+        delete that line so the next message replaces it in place."""
+        try:
+            # The line just above 'end' is index 'end - 1 line'. Check whether
+            # any character in it carries the 'live' tag.
+            prev_start = "end-2l linestart"
+            prev_end   = "end-1l lineend"
+            tags = self._raw.tag_names(prev_start) or ()
+            if "live" in tags:
+                self.text.configure(state="normal")
+                self._raw.delete(prev_start, prev_end + "+1c")
+                self.text.configure(state="disabled")
+        except Exception:
+            pass
 
     def banner(self, text: str) -> None:
         """Big eye-catching header, like SYSTEM LOG in the screenshot."""
